@@ -1,0 +1,69 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env - NEVER commit real secrets
+.env
+.env.*
+!.env.example
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# testing
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+
+# database backups
+backups/
+*.dump
+*.sql.gz
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# docker local overrides
+docker-compose.override.yml
+
+# generated prisma client
+apps/api/node_modules/.prisma/
+apps/api/prisma/generated/
+
+# uploaded / generated assets (keep the folder structure via .gitkeep)
+assets/**/*.glb
+assets/**/*.gltf
+assets/**/*.bin
+!assets/**/.gitkeep
+
+# minio local data
+.minio-data/
+
+# tsc must never emit next to sources - if it does, Vite would prefer a stale
+# vite.config.js over vite.config.ts. Belt and braces.
+apps/*/vite.config.js
+apps/*/src/**/*.js
+apps/*/src/**/*.jsx
+
+# local verification screenshots
+docs/shots/

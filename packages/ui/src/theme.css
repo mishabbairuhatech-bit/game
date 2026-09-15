@@ -1,0 +1,131 @@
+/*
+ * Empire Frontier design tokens.
+ *
+ * Tailwind v4 reads @theme at build time, so both apps get the same palette by
+ * importing this file after `@import "tailwindcss"`.
+ *
+ * Palette intent: aged parchment + oxidised brass over a deep slate-ink field,
+ * with ember red reserved for destructive / combat states.
+ */
+
+@theme {
+  --font-display: 'Cinzel', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  /* --- ink: the dark UI field ------------------------------------------- */
+  --color-ink-50: #f4f5f7;
+  --color-ink-100: #e3e6ea;
+  --color-ink-200: #c5cad3;
+  --color-ink-300: #9aa2b1;
+  --color-ink-400: #6d7686;
+  --color-ink-500: #4d5566;
+  --color-ink-600: #3a4152;
+  --color-ink-700: #2b3141;
+  --color-ink-800: #1e2331;
+  --color-ink-900: #151925;
+  --color-ink-950: #0c0f18;
+
+  /* --- parchment: primary text ------------------------------------------ */
+  --color-parchment-100: #f6f1e4;
+  --color-parchment-200: #e8dfc9;
+  --color-parchment-300: #d5c8a9;
+  --color-parchment-400: #b5a684;
+  --color-parchment-500: #948566;
+  --color-parchment-600: #6f6349;
+  --color-parchment-700: #514734;
+
+  /* --- brass: primary accent -------------------------------------------- */
+  --color-brass-100: #fdf3d6;
+  --color-brass-200: #f9e3a5;
+  --color-brass-300: #f2cd6d;
+  --color-brass-400: #e6b13f;
+  --color-brass-500: #d0942a;
+  --color-brass-600: #a97321;
+  --color-brass-700: #82571b;
+  --color-brass-800: #5d3e15;
+  --color-brass-900: #3d290f;
+  --color-brass-950: #241809;
+
+  /* --- ember: danger / combat ------------------------------------------- */
+  --color-ember-200: #f8c4b8;
+  --color-ember-300: #f19b86;
+  --color-ember-400: #e56f52;
+  --color-ember-500: #d24d2f;
+  --color-ember-600: #b23a22;
+  --color-ember-700: #8c2c1a;
+  --color-ember-800: #661f13;
+  --color-ember-950: #2a0c07;
+
+  /* --- resource swatches, matched to game-data ------------------------- */
+  --color-res-coins: #f2c14e;
+  --color-res-gems: #7dd3fc;
+  --color-res-wood: #8b5e34;
+  --color-res-stone: #9ca3af;
+  --color-res-food: #84cc16;
+  --color-res-iron: #94a3b8;
+  --color-res-gold: #eab308;
+
+  --shadow-panel: 0 12px 32px -12px rgb(0 0 0 / 0.75), 0 0 0 1px rgb(255 255 255 / 0.03) inset;
+  --shadow-plate: 0 2px 0 0 rgb(0 0 0 / 0.35), 0 0 12px -4px rgb(230 177 63 / 0.35);
+
+  --radius-panel: 0.75rem;
+}
+
+/* --- base --------------------------------------------------------------- */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-parchment-200);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: var(--color-brass-500);
+    color: var(--color-ink-950);
+  }
+
+  /* Slim, themed scrollbars so panels do not break the aesthetic. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-600) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Subtle vignette used behind the 3D canvas and auth screens. */
+  .bg-frontier {
+    background-image:
+      radial-gradient(ellipse 90% 60% at 50% -10%, rgb(208 148 42 / 0.14), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 50% 110%, rgb(45 55 80 / 0.5), transparent 65%),
+      linear-gradient(180deg, var(--color-ink-950), #070910);
+  }
+
+  .text-shadow-plate {
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.6);
+  }
+}

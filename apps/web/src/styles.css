@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+/* Design tokens + base layer live in the shared UI package so the game client
+   and the admin panel cannot drift apart visually. */
+@import '@empire/ui/styles.css';
+
+/* Tailwind v4 scans the importing file's directory by default; the shared UI
+   package lives outside it, so its class names have to be declared as a source. */
+@source '../../../packages/ui/src';
+
+/* The 3D canvas owns the whole viewport - suppress the document scrollbar so a
+   drag on the canvas never scrolls the page underneath it. */
+html,
+body {
+  overflow: hidden;
+  touch-action: none;
+}
+
+canvas {
+  display: block;
+  outline: none;
+}

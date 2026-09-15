@@ -1,0 +1,36 @@
+# Build context is the repo root for every image - keep it small and never
+# let host artefacts (or secrets) leak into a layer.
+**/node_modules
+**/dist
+**/build
+**/.turbo
+**/coverage
+**/.vite
+**/*.tsbuildinfo
+
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# NEVER bake real secrets into an image.
+.env
+.env.*
+!.env.example
+
+backups/
+*.log
+npm-debug.log*
+
+playwright-report/
+test-results/
+.playwright-mcp/
+
+docs/
+README.md
+CHANGELOG.md
+
+# Compose files are not needed inside an image.
+docker-compose*.yml

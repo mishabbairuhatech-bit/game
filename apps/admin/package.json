@@ -1,0 +1,35 @@
+{
+  "name": "@empire/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Empire Frontier admin panel",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5174",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@empire/game-data": "*",
+    "@empire/shared": "*",
+    "@empire/ui": "*",
+    "clsx": "^2.1.1",
+    "react": "~19.2.0",
+    "react-dom": "~19.2.0",
+    "react-router-dom": "^7.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.12",
+    "@types/node": "^22.13.9",
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^26.0.0",
+    "tailwindcss": "^4.0.12",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.1",
+    "vitest": "^3.0.8"
+  }
+}

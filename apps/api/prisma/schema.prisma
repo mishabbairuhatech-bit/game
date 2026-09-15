@@ -1,0 +1,1697 @@
+// =============================================================================
+// EMPIRE FRONTIER - database schema
+// =============================================================================
+// Conventions
+//   * camelCase fields in Prisma, snake_case tables/columns via @map/@@map.
+//   * Every table carries createdAt/updatedAt.
+//   * Money-like values (coins, gems, real-money minor units) are BigInt.
+//     Stockpiled resources are Int - they are hard-capped by storage anyway.
+//   * Anything a client could lie about (balances, ownership, battle outcome)
+//     is written only by server-side services inside a transaction.
+//   * Ledger tables (CurrencyTransaction, MarketplaceTransaction, Payment,
+//     AuditLog) are append-only. Never UPDATE a ledger row.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // citext gives us case-insensitive unique emails/usernames without having to
+  // remember to lower() at every call site.
+  extensions = [citext, pg_trgm]
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  PLAYER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  BANNED
+  DELETED
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
+enum VerificationTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  EMAIL_CHANGE
+}
+
+enum Biome {
+  GRASSLAND
+  FOREST
+  MOUNTAIN
+  WATER
+  DESERT
+  SWAMP
+  ROCKY
+  RIVERLAND
+  LAKESHORE
+  HIGHLAND
+  BADLANDS
+  TUNDRA
+}
+
+enum WorldStatus {
+  /// Generation in progress. Not yet joinable.
+  GENERATING
+  ACTIVE
+  /// Readable but closed to new claims.
+  LOCKED
+  ARCHIVED
+}
+
+enum PlotStatus {
+  FREE
+  STARTER
+  OWNED
+  FOR_SALE
+  LOCKED
+  PROTECTED
+  EVENT
+  UNAVAILABLE
+}
+
+enum PlotAcquisition {
+  STARTER_GRANT
+  WORLD_PURCHASE
+  MARKETPLACE_PURCHASE
+  ADMIN_GRANT
+  EVENT_REWARD
+}
+
+enum BuildingCategory {
+  CORE
+  PRODUCTION
+  STORAGE
+  MILITARY
+  DEFENSE
+  WALL
+  UTILITY
+  DECORATION
+}
+
+enum BuildingState {
+  CONSTRUCTING
+  ACTIVE
+  UPGRADING
+  DAMAGED
+  DESTROYED
+}
+
+enum JobStatus {
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum UnitClass {
+  INFANTRY
+  RANGED
+  CAVALRY
+  SIEGE
+  CASTER
+}
+
+enum CurrencyKey {
+  COINS
+  GEMS
+  WOOD
+  STONE
+  FOOD
+  IRON
+  GOLD
+}
+
+enum ResourceKind {
+  CURRENCY
+  PREMIUM
+  RESOURCE
+}
+
+// Why a balance moved. Drives analytics and anti-cheat review.
+enum LedgerReason {
+  SIGNUP_GRANT
+  PRODUCTION_COLLECT
+  BUILDING_CONSTRUCT
+  BUILDING_UPGRADE
+  BUILDING_REFUND
+  UNIT_TRAINING
+  UNIT_REFUND
+  RESEARCH
+  PLOT_PURCHASE_WORLD
+  PLOT_PURCHASE_MARKET
+  PLOT_SALE_PROCEEDS
+  MARKETPLACE_FEE
+  BATTLE_LOOT_GAINED
+  BATTLE_LOOT_LOST
+  QUEST_REWARD
+  ACHIEVEMENT_REWARD
+  PAYMENT_CREDIT
+  PAYMENT_REFUND
+  ADMIN_ADJUSTMENT
+  SHIELD_PURCHASE
+  RUSH_TIMER
+  ALLIANCE_DONATION
+  TREASURY_MINT
+}
+
+enum BattleStatus {
+  MATCHING
+  PREPARING
+  ACTIVE
+  RESOLVING
+  COMPLETED
+  ABANDONED
+  ERRORED
+}
+
+enum BattleRole {
+  ATTACKER
+  DEFENDER
+}
+
+enum BattleOutcome {
+  ATTACKER_VICTORY
+  DEFENDER_VICTORY
+  DRAW
+  ABANDONED
+}
+
+enum ListingType {
+  PLOT
+  ITEM
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  LOCKED
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  STRIPE
+  MANUAL
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  DISPUTED
+}
+
+enum QuestKind {
+  DAILY
+  WEEKLY
+  STORY
+  EVENT
+}
+
+enum QuestStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CLAIMED
+  EXPIRED
+}
+
+enum AllianceRole {
+  MEMBER
+  ELDER
+  OFFICER
+  LEADER
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  BLOCKED
+}
+
+enum MessageChannel {
+  GLOBAL
+  ALLIANCE
+  DIRECT
+  SYSTEM
+}
+
+enum NotificationType {
+  BUILDING_COMPLETED
+  UPGRADE_COMPLETED
+  TRAINING_COMPLETED
+  ATTACK_RECEIVED
+  BATTLE_COMPLETED
+  PLOT_SOLD
+  PLOT_PURCHASED
+  QUEST_COMPLETED
+  ACHIEVEMENT_UNLOCKED
+  ALLIANCE_INVITATION
+  PAYMENT_CREDITED
+  SYSTEM
+}
+
+enum LeaderboardCategory {
+  LEVEL
+  EMPIRE_POWER
+  LAND
+  VICTORIES
+  WEALTH
+  DEFENSE
+}
+
+enum LeaderboardPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ALL_TIME
+}
+
+enum ShieldReason {
+  NEW_PLAYER
+  DEFEAT_PROTECTION
+  PURCHASED
+  ADMIN_GRANT
+  MAINTENANCE
+}
+
+enum InventoryItemType {
+  RESOURCE_BUNDLE
+  BOOST
+  DECORATION
+  SKIN
+  SHIELD_TOKEN
+  SPECIAL
+}
+
+enum AuditActorType {
+  USER
+  ADMIN
+  SYSTEM
+  WEBHOOK
+}
+
+enum SuspicionKind {
+  IMPOSSIBLE_RESOURCE_GAIN
+  IMPOSSIBLE_MOVEMENT
+  INVALID_PLACEMENT
+  INVALID_BATTLE_ACTION
+  DUPLICATE_TRANSACTION
+  DUPLICATE_WEBHOOK
+  IMPOSSIBLE_ARMY_SIZE
+  NEGATIVE_BALANCE
+  RATE_ABUSE
+  CLIENT_TAMPERING
+}
+
+// =============================================================================
+// IDENTITY & ACCESS
+// =============================================================================
+
+model User {
+  id                String     @id @default(uuid()) @db.Uuid
+  email             String     @unique @db.Citext
+  /// bcrypt hash. NULL only for accounts created purely through OAuth.
+  passwordHash      String?    @map("password_hash")
+  username          String     @unique @db.Citext
+  role              UserRole   @default(PLAYER)
+  status            UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt   DateTime?  @map("email_verified_at")
+  avatarUrl         String?    @map("avatar_url")
+  locale            String     @default("en")
+
+  /// Bumped on password change / forced logout - invalidates every issued
+  /// access token without needing a denylist.
+  tokenVersion      Int        @default(0) @map("token_version")
+  failedLoginCount  Int        @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?  @map("locked_until")
+  lastLoginAt       DateTime?  @map("last_login_at")
+  lastLoginIp       String?    @map("last_login_ip")
+
+  /// Moderation
+  bannedAt          DateTime?  @map("banned_at")
+  banReason         String?    @map("ban_reason")
+  mutedUntil        DateTime?  @map("muted_until")
+
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  deletedAt         DateTime?  @map("deleted_at")
+
+  profile             Profile?
+  empire              Empire?
+  wallet              Wallet?
+  oauthAccounts       OAuthAccount[]
+  refreshTokens       RefreshToken[]
+  verificationTokens  VerificationToken[]
+  plotOwnerships      PlotOwnership[]
+  ownedPlots          Plot[]                  @relation("PlotOwner")
+  listings            MarketplaceListing[]    @relation("ListingSeller")
+  purchases           MarketplaceTransaction[] @relation("TxBuyer")
+  sales               MarketplaceTransaction[] @relation("TxSeller")
+  currencyTxns        CurrencyTransaction[]
+  payments            Payment[]
+  battleParticipants  BattleParticipant[]
+  allianceMembership  AllianceMember?
+  sentFriendRequests  Friend[]                @relation("FriendRequester")
+  recvFriendRequests  Friend[]                @relation("FriendAddressee")
+  sentMessages        Message[]               @relation("MessageAuthor")
+  receivedMessages    Message[]               @relation("MessageRecipient")
+  notifications       Notification[]
+  playerQuests        PlayerQuest[]
+  playerAchievements  PlayerAchievement[]
+  leaderboardEntries  LeaderboardEntry[]
+  shields             Shield[]
+  researches          Research[]
+  auditLogs           AuditLog[]              @relation("AuditActor")
+  suspicions          SuspiciousActivity[]
+  reportsFiled        Report[]                @relation("ReportReporter")
+  reportsAgainst      Report[]                @relation("ReportTarget")
+
+  @@index([status])
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Profile {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName  String   @map("display_name")
+  empireName   String?  @map("empire_name")
+  bio          String?  @db.VarChar(280)
+  bannerKey    String?  @map("banner_key")
+  countryCode  String?  @map("country_code") @db.VarChar(2)
+
+  level        Int      @default(1)
+  xp           Int      @default(0)
+  /// Denormalised from Empire for fast leaderboard reads. Recomputed server side.
+  empirePower  Int      @default(0) @map("empire_power")
+
+  battlesWon   Int      @default(0) @map("battles_won")
+  battlesLost  Int      @default(0) @map("battles_lost")
+  raidsDefended Int     @default(0) @map("raids_defended")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([level])
+  @@index([empirePower])
+  @@map("profiles")
+}
+
+model OAuthAccount {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       AuthProvider
+  providerUserId String       @map("provider_user_id")
+  email          String?
+  displayName    String?      @map("display_name")
+  avatarUrl      String?      @map("avatar_url")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+/// One row per active session. Rotated on every refresh; the previous row is
+/// marked revoked so a replayed token is detectable (token-reuse detection).
+model RefreshToken {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the raw token. The raw value never touches the database.
+  tokenHash      String    @unique @map("token_hash")
+  /// Chain id shared by every rotation of one login session.
+  familyId       String    @map("family_id") @db.Uuid
+  userAgent      String?   @map("user_agent")
+  ipAddress      String?   @map("ip_address")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  replacedById   String?   @map("replaced_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model VerificationToken {
+  id         String                @id @default(uuid()) @db.Uuid
+  userId     String                @map("user_id") @db.Uuid
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       VerificationTokenType
+  /// SHA-256 of the emailed token.
+  tokenHash  String                @unique @map("token_hash")
+  payload    Json?
+  expiresAt  DateTime              @map("expires_at")
+  consumedAt DateTime?             @map("consumed_at")
+  createdAt  DateTime              @default(now()) @map("created_at")
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("verification_tokens")
+}
+
+// =============================================================================
+// WORLD GEOMETRY
+// =============================================================================
+
+model World {
+  id     String @id @default(uuid()) @db.Uuid
+  slug   String @unique
+  name   String
+
+  /// Deterministic generation seed. The same seed always reproduces the same
+  /// terrain, so only the seed is stored - never a per-tile heightmap.
+  seed   String
+
+  /// Extent in logical tiles. Square worlds only.
+  width  Int
+  height Int
+
+  /// Partition sizes, in tiles. Each must divide the one above it evenly.
+  regionSize Int @map("region_size")
+  zoneSize   Int @map("zone_size")
+  plotSize   Int @map("plot_size")
+
+  status WorldStatus @default(GENERATING)
+
+  /// Set when generation finishes, so a half-generated world is detectable.
+  generatedAt DateTime? @map("generated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  regions Region[]
+  zones   Zone[]
+  plots   Plot[]
+
+  @@index([status])
+  @@map("worlds")
+}
+
+model Region {
+  id      String @id @default(uuid()) @db.Uuid
+  worldId String @map("world_id") @db.Uuid
+  world   World  @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  /// Region-grid coordinates.
+  x    Int
+  y    Int
+  /// Extent in tiles.
+  width  Int
+  height Int
+  /// Tile coordinates of the north-west corner. Denormalised so a viewport
+  /// query can filter on tiles without recomputing from x/y and regionSize.
+  tileX Int @map("tile_x")
+  tileY Int @map("tile_y")
+
+  name String
+  /// Deterministic sub-seed, derived from the world seed and coordinates.
+  seed String
+  /// Dominant biome, used for map colouring at far zoom.
+  biome Biome
+  /// Region-wide price multiplier in basis points (10000 = 1.0x).
+  priceModifierBps Int @default(10000) @map("price_modifier_bps")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  zones Zone[]
+  plots Plot[]
+
+  @@unique([worldId, x, y])
+  @@index([worldId, biome])
+  @@index([worldId, tileX, tileY])
+  @@map("regions")
+}
+
+model Zone {
+  id       String @id @default(uuid()) @db.Uuid
+  worldId  String @map("world_id") @db.Uuid
+  world    World  @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  regionId String @map("region_id") @db.Uuid
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  /// Zone-grid coordinates, global to the world.
+  x    Int
+  y    Int
+  width  Int
+  height Int
+  tileX Int @map("tile_x")
+  tileY Int @map("tile_y")
+
+  seed  String
+  biome Biome
+  /// Zones open progressively as the world fills up.
+  isOpen Boolean @default(true) @map("is_open")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  plots Plot[]
+
+  @@unique([worldId, x, y])
+  /// Coordinates are unique within the parent region as well as globally.
+  @@unique([regionId, x, y])
+  @@index([regionId, biome])
+  @@index([worldId, tileX, tileY])
+  @@map("zones")
+}
+
+model Plot {
+  id        String     @id @default(uuid()) @db.Uuid
+  worldId   String     @map("world_id") @db.Uuid
+  world     World      @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  regionId  String     @map("region_id") @db.Uuid
+  region    Region     @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  zoneId    String     @map("zone_id") @db.Uuid
+  zone      Zone       @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  /// Human-readable stable code, e.g. "R3-4:Z18-22:P92-113".
+  /// Unique per world, NOT globally: the code is derived from coordinates, so
+  /// every world produces the same codes. A global unique here silently drops
+  /// every plot of a second world through `skipDuplicates`.
+  code      String
+  /// Global plot-grid coordinates (not tile coordinates).
+  x         Int
+  y         Int
+  /// Extent in tiles. Equals the world's plotSize on both axes.
+  width     Int
+  height    Int
+  /// Tile coordinates of the north-west corner. Denormalised so viewport
+  /// queries can filter in tile space without recomputing from x/y.
+  tileX     Int        @map("tile_x")
+  tileY     Int        @map("tile_y")
+  biome     Biome
+  status    PlotStatus @default(FREE)
+
+  /// Resolved from the biome's terrain rule at generation time. Stored so the
+  /// hot path (can I build here?) is an indexed column read, not a lookup
+  /// through the rules table on every request.
+  isBuildable Boolean  @default(true) @map("is_buildable")
+
+  /// Server-computed asking price in coins when bought from the world.
+  price     BigInt     @default(0)
+  isForSale Boolean    @default(false) @map("is_for_sale")
+
+  ownerId   String?    @map("owner_id") @db.Uuid
+  owner     User?      @relation("PlotOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  empireId  String?    @map("empire_id") @db.Uuid
+  empire    Empire?    @relation(fields: [empireId], references: [id], onDelete: SetNull)
+
+  /// Fraction of the plot occupied by unbuildable terrain, 0-10000 bps.
+  waterCoverageBps Int @default(0) @map("water_coverage_bps")
+  /// Baked terrain description the renderer streams (heightmap seed, props).
+  terrain   Json?
+
+  acquiredAt DateTime? @map("acquired_at")
+  lockedUntil DateTime? @map("locked_until")
+  /// New-player protection. While set in the future the plot cannot be raided.
+  protectedUntil DateTime? @map("protected_until")
+
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  ownerships PlotOwnership[]
+  buildings  Building[]
+  listings   MarketplaceListing[]
+
+  @@unique([worldId, x, y])
+  @@unique([worldId, code])
+  /// Coordinates are unique within the parent zone as well as within the world.
+  @@unique([zoneId, x, y])
+  @@index([zoneId, status])
+  @@index([regionId, status])
+  @@index([ownerId])
+  @@index([empireId])
+  @@index([status, isForSale])
+  @@index([biome])
+  /// Viewport queries scan a coordinate window filtered by status.
+  @@index([worldId, x, y, status])
+  @@index([worldId, status, isBuildable])
+  @@map("plots")
+}
+
+/// Append-only ownership history. Current owner also lives on Plot.ownerId for
+/// cheap reads; this table is the audit trail.
+/// Append-only transfer trail. One row per acquisition; `releasedAt` is set
+/// when the holding ends. The current owner also lives on Plot.ownerId for
+/// cheap reads - this table is the audit history behind it, and the basis for
+/// the land marketplace's provenance view.
+model PlotOwnership {
+  id          String          @id @default(uuid()) @db.Uuid
+  plotId      String          @map("plot_id") @db.Uuid
+  plot        Plot            @relation(fields: [plotId], references: [id], onDelete: Cascade)
+
+  /// The acquiring owner.
+  userId      String          @map("user_id") @db.Uuid
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empireId    String?         @map("empire_id") @db.Uuid
+
+  /// Who held it immediately before. Null when claimed from the world.
+  previousOwnerId String?     @map("previous_owner_id") @db.Uuid
+
+  acquisition PlotAcquisition
+  /// Coins paid. 0 for grants.
+  pricePaid   BigInt          @default(0) @map("price_paid")
+
+  /// Links the transfer to the money that moved: a CurrencyTransaction id for
+  /// a world purchase, a MarketplaceTransaction id for a player-to-player
+  /// sale. Null for grants. Makes every transfer reconcilable against the
+  /// ledger.
+  transactionId String?       @map("transaction_id")
+
+  acquiredAt  DateTime        @default(now()) @map("acquired_at")
+  releasedAt  DateTime?       @map("released_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([userId, releasedAt])
+  @@index([plotId, acquiredAt])
+  @@index([previousOwnerId])
+  @@index([transactionId])
+  @@map("plot_ownerships")
+}
+
+// =============================================================================
+// EMPIRE (player game state aggregate)
+// =============================================================================
+
+model Empire {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @unique @map("user_id") @db.Uuid
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name     String
+
+  /// Stockpiles. Hard-capped by the *Capacity columns; never negative.
+  wood     Int    @default(0)
+  stone    Int    @default(0)
+  food     Int    @default(0)
+  iron     Int    @default(0)
+  gold     Int    @default(0)
+
+  woodCapacity  Int @default(1000) @map("wood_capacity")
+  stoneCapacity Int @default(1000) @map("stone_capacity")
+  foodCapacity  Int @default(1000) @map("food_capacity")
+  ironCapacity  Int @default(500)  @map("iron_capacity")
+  goldCapacity  Int @default(250)  @map("gold_capacity")
+
+  /// Anchor for offline accrual. Server-only.
+  lastAccrualAt DateTime @default(now()) @map("last_accrual_at")
+
+  hqLevel        Int @default(1) @map("hq_level")
+  builders       Int @default(1)
+  populationUsed Int @default(0) @map("population_used")
+  populationCap  Int @default(20) @map("population_cap")
+  empirePower    Int @default(0)  @map("empire_power")
+
+  lastAttackAt   DateTime? @map("last_attack_at")
+  lastPlotBuyAt  DateTime? @map("last_plot_buy_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  plots          Plot[]
+  buildings      Building[]
+  buildingUpgrades BuildingUpgrade[]
+  army           Army?
+  inventory      Inventory?
+  trainingQueues TrainingQueue[]
+
+  @@index([empirePower])
+  @@map("empires")
+}
+
+// =============================================================================
+// CATALOGUE (admin-configurable game data)
+// =============================================================================
+
+model Resource {
+  id          String       @id @default(uuid()) @db.Uuid
+  key         CurrencyKey  @unique
+  name        String
+  description String
+  kind        ResourceKind
+  raidable    Boolean      @default(false)
+  maxLootBps  Int          @default(0) @map("max_loot_bps")
+  baseStorage Int          @default(0) @map("base_storage")
+  color       String
+  icon        String
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("resources")
+}
+
+model BuildingDefinition {
+  id             String           @id @default(uuid()) @db.Uuid
+  key            String           @unique
+  name           String
+  description    String
+  category       BuildingCategory
+  footprintWidth  Int             @map("footprint_width")
+  footprintHeight Int             @map("footprint_height")
+  isUnique       Boolean          @default(false) @map("is_unique")
+  blocksMovement Boolean          @default(true) @map("blocks_movement")
+  /// Empty array == any buildable biome.
+  allowedBiomes  Biome[]          @map("allowed_biomes")
+  /// AssetRef from @empire/game-data. Swapping art is a data edit, not a code change.
+  asset          Json
+  enabled        Boolean          @default(true)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  levels    BuildingLevel[]
+  buildings Building[]
+
+  @@index([category])
+  @@map("building_definitions")
+}
+
+model BuildingLevel {
+  id           String             @id @default(uuid()) @db.Uuid
+  definitionId String             @map("definition_id") @db.Uuid
+  definition   BuildingDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  level        Int
+
+  /// CostBundle: { WOOD: 120, STONE: 60, ... }
+  buildCost    Json               @map("build_cost")
+  buildSeconds Int                @map("build_seconds")
+  hitpoints    Int
+
+  /// Per-hour output, extra storage, tower profile, capacity grants.
+  production   Json?
+  storage      Json?
+  defense      Json?
+  capacity     Json?
+
+  requiredHqLevel Int             @map("required_hq_level")
+  maxCountAtHq    Int?            @map("max_count_at_hq")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([definitionId, level])
+  @@index([definitionId])
+  @@map("building_levels")
+}
+
+model UnitDefinition {
+  id                    String    @id @default(uuid()) @db.Uuid
+  key                   String    @unique
+  name                  String
+  description           String
+  unitClass             UnitClass @map("unit_class")
+  hitpoints             Int
+  damage                Int
+  defense               Int
+  speed                 Float
+  range                 Float
+  attackCooldownMs      Int       @map("attack_cooldown_ms")
+  trainCost             Json      @map("train_cost")
+  trainSeconds          Int       @map("train_seconds")
+  population            Int
+  trainedAt             String    @map("trained_at")
+  unlockAtBuildingLevel Int       @map("unlock_at_building_level")
+  preferredTargets      Json?     @map("preferred_targets")
+  asset                 Json
+  enabled               Boolean   @default(true)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  armyUnits      ArmyUnit[]
+  trainingQueues TrainingQueue[]
+
+  @@index([unitClass])
+  @@map("unit_definitions")
+}
+
+/// Free-form, admin-editable tuning values. Code reads through ConfigService,
+/// which falls back to the compiled defaults in @empire/game-data.
+model GameConfig {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  /// Stored as text and coerced by ConfigService using `valueType`.
+  value       String
+  valueType   String   @default("string") @map("value_type")
+  description String
+  group       String   @default("general")
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([group])
+  @@map("game_config")
+}
+
+// =============================================================================
+// BUILDINGS (placed instances)
+// =============================================================================
+
+model Building {
+  id           String             @id @default(uuid()) @db.Uuid
+  empireId     String             @map("empire_id") @db.Uuid
+  empire       Empire             @relation(fields: [empireId], references: [id], onDelete: Cascade)
+  plotId       String             @map("plot_id") @db.Uuid
+  plot         Plot               @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  definitionId String             @map("definition_id") @db.Uuid
+  definition   BuildingDefinition @relation(fields: [definitionId], references: [id])
+
+  level     Int           @default(1)
+  state     BuildingState @default(ACTIVE)
+  /// Tile coordinates local to the plot (0..plot.width-1).
+  tileX     Int           @map("tile_x")
+  tileY     Int           @map("tile_y")
+  rotation  Int           @default(0)
+
+  currentHp Int           @map("current_hp")
+  /// Set while a construction/upgrade job is running.
+  readyAt   DateTime?     @map("ready_at")
+  /// Last time this producer's output was folded into the empire stockpile.
+  lastCollectedAt DateTime @default(now()) @map("last_collected_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  upgrades BuildingUpgrade[]
+
+  /// One building per tile origin per plot - the real overlap check is done in
+  /// the service against every footprint, this just stops exact duplicates.
+  @@unique([plotId, tileX, tileY])
+  @@index([empireId, state])
+  @@index([plotId])
+  @@index([definitionId])
+  @@index([readyAt])
+  @@map("buildings")
+}
+
+model BuildingUpgrade {
+  id          String    @id @default(uuid()) @db.Uuid
+  buildingId  String    @map("building_id") @db.Uuid
+  building    Building  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  empireId    String    @map("empire_id") @db.Uuid
+  empire      Empire    @relation(fields: [empireId], references: [id], onDelete: Cascade)
+
+  fromLevel   Int       @map("from_level")
+  toLevel     Int       @map("to_level")
+  status      JobStatus @default(IN_PROGRESS)
+  /// Snapshot of what was actually charged, so a cancel refunds exactly that.
+  costPaid    Json      @map("cost_paid")
+  startedAt   DateTime  @default(now()) @map("started_at")
+  finishesAt  DateTime  @map("finishes_at")
+  completedAt DateTime? @map("completed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([empireId, status])
+  @@index([status, finishesAt])
+  @@map("building_upgrades")
+}
+
+// =============================================================================
+// INVENTORY
+// =============================================================================
+
+model Inventory {
+  id        String   @id @default(uuid()) @db.Uuid
+  empireId  String   @unique @map("empire_id") @db.Uuid
+  empire    Empire   @relation(fields: [empireId], references: [id], onDelete: Cascade)
+  slots     Int      @default(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items InventoryItem[]
+
+  @@map("inventories")
+}
+
+model InventoryItem {
+  id          String            @id @default(uuid()) @db.Uuid
+  inventoryId String            @map("inventory_id") @db.Uuid
+  inventory   Inventory         @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  itemKey     String            @map("item_key")
+  type        InventoryItemType
+  quantity    Int               @default(1)
+  /// Boost payloads, decoration placement, skin metadata.
+  metadata    Json?
+  expiresAt   DateTime?         @map("expires_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@unique([inventoryId, itemKey])
+  @@index([inventoryId, type])
+  @@map("inventory_items")
+}
+
+// =============================================================================
+// ARMY
+// =============================================================================
+
+model Army {
+  id        String   @id @default(uuid()) @db.Uuid
+  empireId  String   @unique @map("empire_id") @db.Uuid
+  empire    Empire   @relation(fields: [empireId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  units ArmyUnit[]
+
+  @@map("armies")
+}
+
+model ArmyUnit {
+  id           String         @id @default(uuid()) @db.Uuid
+  armyId       String         @map("army_id") @db.Uuid
+  army         Army           @relation(fields: [armyId], references: [id], onDelete: Cascade)
+  definitionId String         @map("definition_id") @db.Uuid
+  definition   UnitDefinition @relation(fields: [definitionId], references: [id])
+  /// Idle troops available to send on a raid.
+  count        Int            @default(0)
+  /// Troops currently committed to an active battle.
+  reserved     Int            @default(0)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@unique([armyId, definitionId])
+  @@index([armyId])
+  @@map("army_units")
+}
+
+model TrainingQueue {
+  id           String         @id @default(uuid()) @db.Uuid
+  empireId     String         @map("empire_id") @db.Uuid
+  empire       Empire         @relation(fields: [empireId], references: [id], onDelete: Cascade)
+  definitionId String         @map("definition_id") @db.Uuid
+  definition   UnitDefinition @relation(fields: [definitionId], references: [id])
+  /// Which barracks/range/stable is running the job.
+  buildingId   String?        @map("building_id") @db.Uuid
+
+  quantity     Int
+  /// Advanced lazily whenever the empire is read - never by a browser timer.
+  completed    Int            @default(0)
+  status       JobStatus      @default(IN_PROGRESS)
+  costPaid     Json           @map("cost_paid")
+  /// Seconds per unit, snapshotted so a later balance patch cannot retroactively
+  /// change an in-flight queue.
+  secondsPerUnit Int          @map("seconds_per_unit")
+  startedAt    DateTime       @default(now()) @map("started_at")
+  finishesAt   DateTime       @map("finishes_at")
+  completedAt  DateTime?      @map("completed_at")
+  cancelledAt  DateTime?      @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([empireId, status])
+  @@index([status, finishesAt])
+  @@map("training_queues")
+}
+
+// =============================================================================
+// COMBAT
+// =============================================================================
+
+model Battle {
+  id          String       @id @default(uuid()) @db.Uuid
+  worldId     String?      @map("world_id") @db.Uuid
+  status      BattleStatus @default(MATCHING)
+  /// Deterministic seed - the whole fight can be replayed from it.
+  seed        String
+  /// Frozen copy of the defender's base at match time. The defender upgrading
+  /// mid-raid must not change the battle the attacker is fighting.
+  layoutSnapshot Json      @map("layout_snapshot")
+  /// Frozen copy of the attacker's committed army.
+  armySnapshot   Json      @map("army_snapshot")
+
+  tickRateHz     Int       @default(10) @map("tick_rate_hz")
+  durationSeconds Int      @default(180) @map("duration_seconds")
+  preparationSeconds Int   @default(20) @map("preparation_seconds")
+
+  startedAt   DateTime?    @map("started_at")
+  endsAt      DateTime?    @map("ends_at")
+  completedAt DateTime?    @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  participants BattleParticipant[]
+  result       BattleResult?
+
+  @@index([status, createdAt])
+  @@index([status, endsAt])
+  @@map("battles")
+}
+
+model BattleParticipant {
+  id       String     @id @default(uuid()) @db.Uuid
+  battleId String     @map("battle_id") @db.Uuid
+  battle   Battle     @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  userId   String     @map("user_id") @db.Uuid
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     BattleRole
+
+  powerAtStart  Int  @default(0) @map("power_at_start")
+  /// { swordsman: 20, archer: 5 }
+  unitsDeployed Json @default("{}") @map("units_deployed")
+  unitsLost     Json @default("{}") @map("units_lost")
+  buildingsDestroyed Int @default(0) @map("buildings_destroyed")
+  damageDealt   Int  @default(0) @map("damage_dealt")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([battleId, role])
+  @@index([userId, createdAt])
+  @@map("battle_participants")
+}
+
+model BattleResult {
+  id       String        @id @default(uuid()) @db.Uuid
+  battleId String        @unique @map("battle_id") @db.Uuid
+  battle   Battle        @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  outcome  BattleOutcome
+  /// 0-100. Drives stars, loot and defender shields.
+  destructionPercent Int @map("destruction_percent")
+  stars    Int           @default(0)
+
+  /// { WOOD: 400, STONE: 120, COINS: 900 }
+  lootAwarded Json  @default("{}") @map("loot_awarded")
+  attackerXp  Int   @default(0) @map("attacker_xp")
+  defenderXp  Int   @default(0) @map("defender_xp")
+  /// Ordered simulation log, enough to replay the fight client side.
+  replayLog   Json? @map("replay_log")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([outcome])
+  @@map("battle_results")
+}
+
+model Shield {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    ShieldReason
+  startsAt  DateTime     @default(now()) @map("starts_at")
+  expiresAt DateTime     @map("expires_at")
+  /// Cleared early when the player launches their own raid.
+  brokenAt  DateTime?    @map("broken_at")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([userId, expiresAt])
+  @@map("shields")
+}
+
+// =============================================================================
+// ECONOMY
+// =============================================================================
+
+model Wallet {
+  id       String @id @default(uuid()) @db.Uuid
+  userId   String @unique @map("user_id") @db.Uuid
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Never written directly - always through WalletService inside a
+  /// transaction that also appends a CurrencyTransaction row.
+  coins    BigInt @default(0)
+  gems     BigInt @default(0)
+  /// Lifetime totals, for analytics and fraud review.
+  lifetimeCoinsEarned BigInt @default(0) @map("lifetime_coins_earned")
+  lifetimeGemsPurchased BigInt @default(0) @map("lifetime_gems_purchased")
+  /// Optimistic-concurrency guard on balance writes.
+  version  Int    @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("wallets")
+}
+
+/// Append-only double-entry-ish ledger. Every balance change in the game
+/// writes exactly one row here, inside the same transaction as the balance
+/// update. balanceAfter lets us reconcile without replaying history.
+model CurrencyTransaction {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency    CurrencyKey
+  /// Signed. Negative = spend.
+  amount      BigInt
+  balanceAfter BigInt      @map("balance_after")
+  reason      LedgerReason
+  /// Free-form context: plotId, buildingId, battleId, paymentId...
+  metadata    Json?
+  /// Set for anything that must never double-apply (payments, purchases).
+  idempotencyKey String?   @unique @map("idempotency_key")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([reason, createdAt])
+  @@index([currency, createdAt])
+  @@map("currency_transactions")
+}
+
+model MarketplaceListing {
+  id        String        @id @default(uuid()) @db.Uuid
+  type      ListingType   @default(PLOT)
+  sellerId  String        @map("seller_id") @db.Uuid
+  seller    User          @relation("ListingSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  plotId    String?       @map("plot_id") @db.Uuid
+  plot      Plot?         @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  itemKey   String?       @map("item_key")
+  quantity  Int           @default(1)
+
+  price     BigInt
+  /// Fee snapshotted at listing time so a later config change cannot alter it.
+  feeBps    Int           @map("fee_bps")
+  status    ListingStatus @default(ACTIVE)
+
+  /// Held while a purchase transaction is in flight; blocks double-buy.
+  lockedAt      DateTime? @map("locked_at")
+  lockedByUserId String?  @map("locked_by_user_id") @db.Uuid
+
+  expiresAt DateTime      @map("expires_at")
+  soldAt    DateTime?     @map("sold_at")
+  cancelledAt DateTime?   @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  transactions MarketplaceTransaction[]
+
+  /// A plot can only have one live listing at a time. Enforced additionally by
+  /// a partial unique index created in a migration.
+  @@index([status, expiresAt])
+  @@index([sellerId, status])
+  @@index([plotId, status])
+  @@index([price])
+  @@map("marketplace_listings")
+}
+
+model MarketplaceTransaction {
+  id        String             @id @default(uuid()) @db.Uuid
+  listingId String             @map("listing_id") @db.Uuid
+  listing   MarketplaceListing @relation(fields: [listingId], references: [id])
+  buyerId   String             @map("buyer_id") @db.Uuid
+  buyer     User               @relation("TxBuyer", fields: [buyerId], references: [id])
+  sellerId  String             @map("seller_id") @db.Uuid
+  seller    User               @relation("TxSeller", fields: [sellerId], references: [id])
+  plotId    String?            @map("plot_id") @db.Uuid
+
+  /// price = sellerProceeds + feeAmount
+  price          BigInt
+  feeAmount      BigInt @map("fee_amount")
+  sellerProceeds BigInt @map("seller_proceeds")
+
+  /// Guarantees one settlement per listing even under concurrent buyers.
+  idempotencyKey String @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([buyerId, createdAt])
+  @@index([sellerId, createdAt])
+  @@map("marketplace_transactions")
+}
+
+model PaymentPackage {
+  id          String          @id @default(uuid()) @db.Uuid
+  sku         String          @unique
+  name        String
+  description String
+  /// Price in minor units (paise for INR, cents for USD).
+  amountMinor BigInt          @map("amount_minor")
+  currency    String          @default("INR")
+  gems        Int
+  bonusGems   Int             @default(0) @map("bonus_gems")
+  sortOrder   Int             @default(0) @map("sort_order")
+  isActive    Boolean         @default(true) @map("is_active")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  payments Payment[]
+
+  @@index([isActive, sortOrder])
+  @@map("payment_packages")
+}
+
+model Payment {
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  user      User            @relation(fields: [userId], references: [id])
+  packageId String?         @map("package_id") @db.Uuid
+  package   PaymentPackage? @relation(fields: [packageId], references: [id])
+
+  provider  PaymentProvider
+  /// Provider order id created server side before the client ever opens checkout.
+  providerOrderId   String  @map("provider_order_id")
+  /// Provider payment id, only known after the provider charges the card.
+  providerPaymentId String? @map("provider_payment_id")
+  providerSignature String? @map("provider_signature")
+
+  amountMinor BigInt        @map("amount_minor")
+  currency    String
+  gemsToCredit Int          @map("gems_to_credit")
+  status      PaymentStatus @default(CREATED)
+
+  /// Set once, when gems are actually credited. Guards against replayed
+  /// webhooks crediting twice.
+  creditedAt  DateTime?     @map("credited_at")
+  failureCode String?       @map("failure_code")
+  /// Raw provider payloads, kept for dispute handling.
+  rawOrder    Json?         @map("raw_order")
+  rawWebhook  Json?         @map("raw_webhook")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  webhookEvents PaymentWebhookEvent[]
+
+  @@unique([provider, providerOrderId])
+  @@unique([provider, providerPaymentId])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+/// Every webhook delivery is recorded before it is acted on. The unique
+/// (provider, eventId) pair makes replayed deliveries a no-op.
+model PaymentWebhookEvent {
+  id         String          @id @default(uuid()) @db.Uuid
+  provider   PaymentProvider
+  eventId    String          @map("event_id")
+  eventType  String          @map("event_type")
+  paymentId  String?         @map("payment_id") @db.Uuid
+  payment    Payment?        @relation(fields: [paymentId], references: [id])
+  signatureValid Boolean     @map("signature_valid")
+  processedAt DateTime?      @map("processed_at")
+  payload    Json
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@unique([provider, eventId])
+  @@index([processedAt])
+  @@map("payment_webhook_events")
+}
+
+// =============================================================================
+// PROGRESSION
+// =============================================================================
+
+model Quest {
+  id          String    @id @default(uuid()) @db.Uuid
+  key         String    @unique
+  kind        QuestKind
+  title       String
+  description String
+  /// { type: "BUILD_BUILDINGS", target: 3, filter: {...} }
+  objective   Json
+  /// { COINS: 500, GEMS: 5, xp: 100 }
+  rewards     Json
+  requiredLevel Int     @default(1) @map("required_level")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  playerQuests PlayerQuest[]
+
+  @@index([kind, isActive])
+  @@map("quests")
+}
+
+model PlayerQuest {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questId   String      @map("quest_id") @db.Uuid
+  quest     Quest       @relation(fields: [questId], references: [id], onDelete: Cascade)
+  status    QuestStatus @default(ASSIGNED)
+  progress  Int         @default(0)
+  target    Int
+  /// Daily/weekly quests reset - this scopes uniqueness to a period.
+  periodKey String      @map("period_key")
+  completedAt DateTime? @map("completed_at")
+  claimedAt DateTime?   @map("claimed_at")
+  expiresAt DateTime?   @map("expires_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@unique([userId, questId, periodKey])
+  @@index([userId, status])
+  @@map("player_quests")
+}
+
+model Achievement {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  title       String
+  description String
+  category    String   @default("general")
+  /// { type: "WIN_BATTLES", tiers: [1, 10, 50] }
+  criteria    Json
+  rewards     Json
+  icon        String?
+  isSecret    Boolean  @default(false) @map("is_secret")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  playerAchievements PlayerAchievement[]
+
+  @@index([category])
+  @@map("achievements")
+}
+
+model PlayerAchievement {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String      @map("user_id") @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String      @map("achievement_id") @db.Uuid
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  tier          Int         @default(0)
+  progress      Int         @default(0)
+  unlockedAt    DateTime?   @map("unlocked_at")
+  claimedAt     DateTime?   @map("claimed_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([userId, achievementId])
+  @@index([userId, unlockedAt])
+  @@map("player_achievements")
+}
+
+model Technology {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  name        String
+  description String
+  branch      String
+  tier        Int      @default(1)
+  cost        Json
+  researchSeconds Int  @map("research_seconds")
+  requiredHqLevel Int  @default(1) @map("required_hq_level")
+  /// Keys of technologies that must be completed first.
+  prerequisites String[] @default([])
+  /// { production: { WOOD: 1.1 }, unit: { swordsman: { damage: 1.05 } } }
+  effects     Json
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  researches Research[]
+
+  @@index([branch, tier])
+  @@map("technologies")
+}
+
+model Research {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  technologyId String     @map("technology_id") @db.Uuid
+  technology   Technology @relation(fields: [technologyId], references: [id], onDelete: Cascade)
+  status       JobStatus  @default(IN_PROGRESS)
+  costPaid     Json       @map("cost_paid")
+  startedAt    DateTime   @default(now()) @map("started_at")
+  finishesAt   DateTime   @map("finishes_at")
+  completedAt  DateTime?  @map("completed_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@unique([userId, technologyId])
+  @@index([status, finishesAt])
+  @@map("researches")
+}
+
+// =============================================================================
+// SOCIAL
+// =============================================================================
+
+model Alliance {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.Citext
+  tag         String   @unique @db.Citext
+  description String?  @db.VarChar(500)
+  emblem      Json?
+  isOpen      Boolean  @default(true) @map("is_open")
+  minLevel    Int      @default(1) @map("min_level")
+  maxMembers  Int      @default(50) @map("max_members")
+  /// Denormalised aggregates, recomputed by a scheduled job.
+  memberCount Int      @default(0) @map("member_count")
+  totalPower  Int      @default(0) @map("total_power")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  members     AllianceMember[]
+  invitations AllianceInvitation[]
+
+  @@index([totalPower])
+  @@map("alliances")
+}
+
+model AllianceMember {
+  id         String       @id @default(uuid()) @db.Uuid
+  allianceId String       @map("alliance_id") @db.Uuid
+  alliance   Alliance     @relation(fields: [allianceId], references: [id], onDelete: Cascade)
+  /// One alliance per player, enforced by the unique userId.
+  userId     String       @unique @map("user_id") @db.Uuid
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       AllianceRole @default(MEMBER)
+  contribution BigInt     @default(0)
+  joinedAt   DateTime     @default(now()) @map("joined_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  @@index([allianceId, role])
+  @@map("alliance_members")
+}
+
+model AllianceInvitation {
+  id         String    @id @default(uuid()) @db.Uuid
+  allianceId String    @map("alliance_id") @db.Uuid
+  alliance   Alliance  @relation(fields: [allianceId], references: [id], onDelete: Cascade)
+  invitedUserId String @map("invited_user_id") @db.Uuid
+  invitedById   String @map("invited_by_id") @db.Uuid
+  message    String?   @db.VarChar(300)
+  acceptedAt DateTime? @map("accepted_at")
+  declinedAt DateTime? @map("declined_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@unique([allianceId, invitedUserId])
+  @@index([invitedUserId])
+  @@map("alliance_invitations")
+}
+
+model Friend {
+  id          String       @id @default(uuid()) @db.Uuid
+  requesterId String       @map("requester_id") @db.Uuid
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String       @map("addressee_id") @db.Uuid
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendStatus @default(PENDING)
+  respondedAt DateTime?    @map("responded_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@map("friends")
+}
+
+model Message {
+  id          String         @id @default(uuid()) @db.Uuid
+  channel     MessageChannel
+  authorId    String?        @map("author_id") @db.Uuid
+  author      User?          @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  /// Set for DIRECT messages.
+  recipientId String?        @map("recipient_id") @db.Uuid
+  recipient   User?          @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+  /// Set for ALLIANCE messages.
+  allianceId  String?        @map("alliance_id") @db.Uuid
+
+  body        String         @db.VarChar(1000)
+  /// Set when a moderator removes the message; the row is kept for audit.
+  redactedAt  DateTime?      @map("redacted_at")
+  redactedById String?       @map("redacted_by_id") @db.Uuid
+  readAt      DateTime?      @map("read_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([channel, createdAt])
+  @@index([allianceId, createdAt])
+  @@index([recipientId, readAt])
+  @@index([authorId, createdAt])
+  @@map("messages")
+}
+
+model BlockedUser {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, blockedId])
+  @@index([userId])
+  @@map("blocked_users")
+}
+
+model Report {
+  id          String    @id @default(uuid()) @db.Uuid
+  reporterId  String    @map("reporter_id") @db.Uuid
+  reporter    User      @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUserId String   @map("target_user_id") @db.Uuid
+  targetUser  User      @relation("ReportTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  category    String
+  details     String    @db.VarChar(1000)
+  /// Message / battle / listing the report refers to.
+  contextType String?   @map("context_type")
+  contextId   String?   @map("context_id")
+  resolvedAt  DateTime? @map("resolved_at")
+  resolvedById String?  @map("resolved_by_id") @db.Uuid
+  resolution  String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([resolvedAt, createdAt])
+  @@index([targetUserId])
+  @@map("reports")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String           @db.VarChar(500)
+  /// Deep-link target: { screen: "battle", id: "..." }
+  data      Json?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+// =============================================================================
+// LEADERBOARDS
+// =============================================================================
+
+/// Definition of a board. Actual ranking lives in LeaderboardEntry and is
+/// cached in Redis for reads.
+model Leaderboard {
+  id        String              @id @default(uuid()) @db.Uuid
+  category  LeaderboardCategory
+  period    LeaderboardPeriod
+  /// "2026-W37", "2026-09", "2026-09-11", "all"
+  periodKey String              @map("period_key")
+  computedAt DateTime?          @map("computed_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  entries LeaderboardEntry[]
+
+  @@unique([category, period, periodKey])
+  @@map("leaderboards")
+}
+
+model LeaderboardEntry {
+  id            String      @id @default(uuid()) @db.Uuid
+  leaderboardId String      @map("leaderboard_id") @db.Uuid
+  leaderboard   Leaderboard @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  userId        String      @map("user_id") @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rank          Int
+  score         BigInt
+  /// Rank in the previous computation, for the up/down arrow.
+  previousRank  Int?        @map("previous_rank")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([leaderboardId, userId])
+  @@index([leaderboardId, rank])
+  @@map("leaderboard_entries")
+}
+
+// =============================================================================
+// OBSERVABILITY / MODERATION
+// =============================================================================
+
+/// Append-only. Every admin mutation and every security-relevant user action
+/// lands here.
+model AuditLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  actorType  AuditActorType @map("actor_type")
+  actorId    String?        @map("actor_id") @db.Uuid
+  actor      User?          @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  /// "user.login", "admin.config.update", "payment.webhook.captured"
+  action     String
+  entityType String?        @map("entity_type")
+  entityId   String?        @map("entity_id")
+  /// Redacted diff - never log secrets or password hashes.
+  before     Json?
+  after      Json?
+  ipAddress  String?        @map("ip_address")
+  userAgent  String?        @map("user_agent")
+  requestId  String?        @map("request_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model SuspiciousActivity {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @map("user_id") @db.Uuid
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      SuspicionKind
+  /// 1 (noise) .. 10 (near-certain exploit).
+  severity  Int           @default(1)
+  details   Json
+  requestId String?       @map("request_id")
+  ipAddress String?       @map("ip_address")
+  reviewedAt DateTime?    @map("reviewed_at")
+  reviewedById String?    @map("reviewed_by_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([kind, severity])
+  @@index([reviewedAt])
+  @@map("suspicious_activities")
+}

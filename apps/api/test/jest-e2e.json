@@ -1,0 +1,15 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec\\.ts$",
+  "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+  "moduleNameMapper": {
+    "^@empire/shared$": "<rootDir>/../../packages/shared/src/index.ts",
+    "^@empire/game-data$": "<rootDir>/../../packages/game-data/src/index.ts",
+    "^@empire/game-engine$": "<rootDir>/../../packages/game-engine/src/index.ts"
+  },
+  "testTimeout": 120000,
+  "maxWorkers": 1,
+  "forceExit": true
+}
